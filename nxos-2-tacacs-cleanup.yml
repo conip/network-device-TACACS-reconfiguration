@@ -1,0 +1,52 @@
+---
+- name: "NEXUS - CLEANING UP TACACS CONFIG EXCEPT NEW ISE SERVERS AND GROUPS"
+  hosts: nexus
+  become: yes
+  become_method: enable
+  gather_facts: false
+  vars_files:
+    - ./vars/sensitive_vars.yml
+  vars_prompt:
+    - name: username
+      prompt: What is your username?
+      private: no
+    - name: password
+      prompt: What is your password?
+
+  tasks:
+    - name: LOOKING FOR TACACS SERVER GROUPS
+      cisco.nxos.nxos_command:
+        commands:
+          - show run tacacs
+      register: var_result_1
+    
+    - name: "test"
+      set_fact:
+        var_Server_group: '{{ var_result_1.stdout[0] | regex_findall("aaa group server tacacs. \w+") | regex_replace("aaa group server tacacs\+ ","") }}'
+
+
+    - name: PARSING
+      ansible.utils.cli_parse:
+        command: show run tacacs
+        parser:
+          name: ansible.utils.textfsm
+          template_path: "./templates/nxos_show_run_tacacs.textfsm"
+        set_fact: var_aaa_tacacs_groups
+
+    - debug:
+        msg: "{{ var_aaa_tacacs_groups }}"
+
+    - name: REMOVING GROUPS
+      cisco.nxos.nxos_config:
+        lines:
+          - "no aaa group server tacacs+ {{ item.AAA_GROUP_NAME }}"
+      when: item.AAA_GROUP_NAME != aaa_group_name
+      with_items: '{{ var_aaa_tacacs_groups }}'
+
+    - name: REMOVING SERVERS with INCLUDED TASK
+      include_tasks: ./includes/nxos_remove_server.yml
+      when: 'servers_list.AAA_GROUP_NAME != aaa_group_name'
+      loop: "{{ var_aaa_tacacs_groups }}"
+      loop_control:
+        loop_var: servers_list
+...

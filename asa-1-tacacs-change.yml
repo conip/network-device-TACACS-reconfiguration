@@ -1,0 +1,104 @@
+---
+- name: "ASA - CHANGING TACACS SETTINGS"
+  hosts: asa
+  become: yes
+  become_method: enable
+  gather_facts: false
+  vars:
+    var_ping_test: 'PING NOT WORKING'
+  vars_files:
+    - ./vars/sensitive_vars.yml
+  vars_prompt:
+    - name: username
+      prompt: What is your username?
+      private: no
+    - name: password
+      prompt: What is your password?
+  tasks:
+    - name: CHECKING HA 
+      ansible.utils.cli_parse:
+        command: show failover
+        parser:
+          name: ansible.utils.textfsm
+          template_path: "./templates/asa_show_failover.textfsm"
+        set_fact: failoverstatus
+
+    - debug:
+        msg: "{{ failoverstatus }}"
+    # this block of tasks will be executed only against STANDALONE or HA ACTIVE ASA - standby should replicate this config    
+    - block:
+        - name: PING TEST
+          asa_command:
+            commands:
+              - ping {{ ise_srv_1 }} repeat 1
+          register: var_ping_result
+        - set_fact:
+            var_ping_test: 'PING OK'
+          when: var_ping_result.stdout[0] | regex_search(".*!.*")
+        - debug:
+            msg: "PING TEST  - >  {{ var_ping_test }}"
+        - meta: end_play
+          when: var_ping_test == 'PING NOT WORKING'
+
+        - name: ADDING BACKDOOR
+          asa_config:
+            lines:
+              - username {{ backdoor_user }} password {{ backdoor_pass }} priv 15
+
+        - name: CHECKING CURRENT TACACS SOURCE INT
+          ansible.utils.cli_parse:
+            command: show run | include aaa-server
+            parser:
+              name: ansible.utils.textfsm
+              template_path: "./templates/asa_show_run_inc_aaa_server.textfsm"
+            set_fact: result_aaa_server
+
+        - debug:
+            msg: "{{ result_aaa_server }}"
+
+        - name: CHECKING AAA AUTH/AUTZ COMMANDS
+          ansible.utils.cli_parse:
+            command: show run | include aaa a
+            parser:
+              name: ansible.utils.textfsm
+              template_path: "./templates/asa_show_run_inc_aaa_a.textfsm"
+            set_fact: result_aaa_a
+        - debug:
+            msg: "{{ result_aaa_a }}"
+
+        - name: CHECKING WHICH AAA SRV GROUP IS BEING USED FOR SSH
+          set_fact:
+            var_current_aaa_group_name: '{{ item["AAA_SERVER_GROUP"] }}'
+          with_items: "{{ result_aaa_a }}"
+          when: item['AAA_PROT'] == 'ssh'
+
+        - name: SETTING SRC INT
+          set_fact:
+            var_asa_int: "{{ item['AAA_INTERFACE'] }}"
+          with_items: "{{ result_aaa_server }}"
+          when: item['AAA_SERVER_GROUP'] == var_current_aaa_group_name
+
+        - debug:
+            msg: "SRC INT - {{ var_asa_int }}"
+
+        - asa_config:
+            lines:
+              # no aaa ... command disabled authorzation completely regardless group 
+              - no aaa authorization command LOCAL
+              - aaa authorization exec authentication-server auto-enable
+              - aaa-server {{ aaa_group_name }} protocol tacacs+
+          ignore_errors: yes
+        - asa_config:
+            lines:
+              - key 0 {{ tacacs_shared_key }}
+            parents: aaa-server {{ aaa_group_name }} {{ var_asa_int }} host {{ item }}
+          with_items: "{{ ise_servers }}"
+        - asa_config:
+            lines:
+              - no aaa authentication ssh console {{ var_current_aaa_group_name }}
+        - asa_config:
+            lines:
+              - aaa authentication ssh console {{ aaa_group_name }} LOCAL
+      when: failoverstatus[0]['FAILOVER_THIS_HOST'] == 'ACTIVE' or failoverstatus[0]['FAILOVER_STATE'] == "Off"
+
+...

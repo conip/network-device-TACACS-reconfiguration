@@ -1,0 +1,95 @@
+---
+- name: "NEXUS - CHANGING TACACS SETTINGS"
+  hosts: nexus
+  become: yes
+  become_method: enable
+  gather_facts: false
+  vars:
+    # var_src_int: 'not-defined'
+    # var_use_vrf: 'default'
+  vars_files:
+    - ./vars/sensitive_vars.yml
+  vars_prompt:
+    - name: username
+      prompt: What is your username?
+      private: no
+    - name: password
+      prompt: What is your password?
+
+  tasks:
+    - block:
+        - name: LOOKING FOR TACACS SRC INTERFACE OR "use-vrf" COMMAND
+          cisco.nxos.nxos_command:
+            commands:
+              - show run tacacs
+          register: var_result_1
+
+        # ending play for single host if there are already more 'aaa group server tacacs ...' defined (we don't know which src int to use etc)
+        - block:
+            - debug:
+                msg: "STOPPING - MORE than 1 'aaa group server tacacs ...' definitions COUNT: {{ var_result_1.stdout | regex_findall('aaa group server tacacs') | length }}"
+            - meta: end_host
+          when: var_result_1.stdout[0] | regex_findall('aaa group server tacacs') | length > 1
+
+        - ansible.utils.cli_parse:
+            command: show run tacacs
+            parser:
+              name: ansible.utils.textfsm
+              template_path: "./templates/nxos_show_run_tacacs.textfsm"
+            set_fact: var_nexus_tacacs
+
+        - set_fact:
+            var_src_int: "{{ var_nexus_tacacs[0]['SRC_INT'] }}"
+            var_use_vrf: "{{ var_nexus_tacacs[0]['USE_VRF'] }}"
+
+        - debug:
+            msg: "{{ inventory_hostname }} > using src int: {{ var_src_int }} > using vrf: {{ var_use_vrf }}"       
+
+        - name: "ADDING NEW TACACS SERVER"
+          cisco.nxos.nxos_aaa_server_host:
+            server_type: tacacs
+            key: "{{ tacacs_shared_key }}"
+            address: "{{ item }}"
+            state: present
+          with_items: "{{ ise_servers }}"   
+        - name: "ADDING NEW AAA GROUP"
+          cisco.nxos.nxos_config:
+            lines:
+              - server {{ item }}
+            parents: aaa group server tacacs+ {{ aaa_group_name }}
+          with_items: "{{ ise_servers }}"
+        - name: "ADDING source-interface IF DEFINED"
+          cisco.nxos.nxos_config:
+            lines:
+              - source-interface {{ var_src_int }}
+            parents: aaa group server tacacs+ {{ aaa_group_name }}
+          when: var_src_int != ""
+        - name: "ADDING use-vrf IF DEFINED"
+          cisco.nxos.nxos_config:
+            lines:
+              - use-vrf {{ var_use_vrf }}
+            parents: aaa group server tacacs+ {{ aaa_group_name }}
+          when: var_use_vrf != ""
+
+        - name: "TESTING NEW AAA TACACS SERVER"
+          cisco.nxos.nxos_command:
+            commands:
+              - test aaa group {{ aaa_group_name }} {{ new_ise_local_username }} {{ new_ise_local_password }}
+          register: var_test_result
+
+        - name: CHANGING AAA COMMANDS IF TEST OK
+          block:
+            - name: CHANGING AAA COMMANDS IF TEST OK
+              cisco.nxos.nxos_config:
+                lines:
+                  - aaa authentication login default fallback error local
+                  - aaa authentication login default group {{ aaa_group_name }} local
+                  - aaa authentication login console group {{ aaa_group_name }} local
+                  - aaa accounting default group {{ aaa_group_name }}
+                  - aaa authorization commands console group {{ aaa_group_name }} local
+                  - aaa authorization commands default group {{ aaa_group_name }} local
+                  - aaa authorization config-commands console group {{ aaa_group_name }} local
+                  - aaa authorization config-commands default group {{ aaa_group_name }} local
+
+          when: var_test_result.stdout[0] | regex_search("user has been authenticated") 
+...

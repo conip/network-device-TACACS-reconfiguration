@@ -1,0 +1,14 @@
+[asa]
+asa1 ansible_host=192.168.101.156
+asa2 ansible_host=192.168.101.157
+
+[asa:vars]
+ansible_user="{{ username }}"
+ansible_ssh_pass="{{ password }}"
+ansible_connection=network_cli
+ansible_python_interpreter=auto
+ansible_network_os=asa
+ansible_become_method=enable
+ansible_become_pass="{{ password }}"
+ise_srv_1="192.168.101.99"
+ise_srv_2="170.118.83.40"

@@ -1,0 +1,6 @@
+Value AAA_SERVER_GROUP (\S+)
+Value AAA_INTERFACE (\S+)
+Value AAA_SRV_IP (\d+\.\d+\.\d+\.\d+)
+
+Start
+  ^aaa-server\s+${AAA_SERVER_GROUP}\s+${AAA_INTERFACE} host ${AAA_SRV_IP}\s*$$ -> Record

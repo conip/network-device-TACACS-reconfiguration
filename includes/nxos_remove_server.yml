@@ -1,0 +1,5 @@
+- name: REMOVING SPECIFIC SERVER
+  cisco.nxos.nxos_config:
+    lines:
+      - "no tacacs-server host {{ item }}"
+  with_items: '{{ servers_list.IP_ADDRESS }}'

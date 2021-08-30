@@ -1,0 +1,11 @@
+Value Required AAA_GROUP_NAME (.+)
+Value List IP_ADDRESS (\d+\.\d+\.\d+\.\d+)
+Value USE_VRF (\S+)
+Value SRC_INT (\S+)
+
+Start
+ ^aaa group server tacacs\+ -> Continue.Record 
+ ^aaa group server tacacs\+ ${AAA_GROUP_NAME} 
+ ^\s+server ${IP_ADDRESS}
+ ^\s+use-vrf ${USE_VRF}
+ ^\s+source-interface ${SRC_INT}

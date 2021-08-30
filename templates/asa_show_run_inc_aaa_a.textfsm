@@ -1,0 +1,7 @@
+Value AAA_PURPOSE (\S+)
+Value AAA_PROT (\S+)
+Value AAA_SERVER_GROUP (\S+)
+
+Start
+  ^aaa ${AAA_PURPOSE} ${AAA_PROT} console ${AAA_SERVER_GROUP}\s*.*$$ -> Record
+  ^aaa ${AAA_PURPOSE} ${AAA_PROT} command ${AAA_SERVER_GROUP}\s*.*$$ -> Record

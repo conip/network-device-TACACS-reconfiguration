@@ -1,0 +1,70 @@
+---
+- name: "ASA - CHANGING TACACS SETTINGS"
+  hosts: asa
+  become: yes
+  become_method: enable
+  gather_facts: false
+  vars:
+    var_test_ise: 'ISE-MOA not defined'
+  vars_prompt:
+    - name: username
+      prompt: What is your username?
+      private: no
+    - name: password
+      prompt: What is your password?
+
+  tasks:
+    - name: CHECKING HA 
+      ansible.utils.cli_parse:
+        command: show failover
+        parser:
+          name: ansible.utils.textfsm
+          template_path: "./templates/asa_show_failover.textfsm"
+        set_fact: failoverstatus
+        
+
+    - name: CHECKING IF ISE-MOA EXISTS
+      asa_command:
+        commands:
+          - show run | i aaa authentication ssh
+      register: var_test_ise_result
+    - set_fact:
+        var_test_ise: "ISE-MOA defined"
+      when: var_test_ise_result.stdout[0] | regex_search('.*ISE-MOA.*')
+
+
+    - name: CHANGING TACACS CONFIG ONLY ON ACTIVE OR STANDALONE ASA
+      block:
+
+        - name: CHECKING CURRENT TACACS config
+          asa_command:
+            commands:
+              - show run | include aaa a
+          register: var_result_1
+          
+#         - name: REMOVING ALL TACACS COMMANDS
+#           cisco.asa.asa_config:
+#             lines:
+#               - no {{ item }}
+#           with_items: "{{ var_result_1.stdout_lines }}"
+#           when: (item | regex_search('aaa authentication http console')) or 
+#                 (item | regex_search('aaa authentication enable console')) or 
+#                 (item | regex_search('aaa accounting command')) or
+#                 (item | regex_search('aaa authentication serial console'))
+            
+#         - cisco.asa.asa_config:
+#             lines:
+#               - aaa authentication http console ISE-MOA LOCAL
+#               - aaa authentication enable console ISE-MOA LOCAL
+#               - aaa accounting command ISE-MOA
+#               - aaa authorization command ISE-MOA LOCAL
+# #              - aaa authentication serial console ISE-MOA LOCAL
+
+        - name: SAVING
+          asa_command:
+            commands:
+              - write mem
+      when: 
+        - failoverstatus[0]['FAILOVER_THIS_HOST'] == 'Active' or failoverstatus[0]['FAILOVER_STATE'] == "Off"
+        - var_test_ise == 'ISE-MOA defined'
+...

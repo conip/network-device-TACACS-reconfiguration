@@ -1,0 +1,18 @@
+Value FAILOVER_STATE (\S+)
+Value FAILOVER_ROLE (\S+)
+Value FAILOVER_THIS_HOST (\S+)
+
+
+Start
+  ^Failover\s+${FAILOVER_STATE}\s*$$
+  ^Failover\s+unit\s+${FAILOVER_ROLE}\s*$$ -> ThisHost
+  ^Last Failover.*$$ -> ThisHost
+
+ThisHost
+  ^\s*This host: Primary - ${FAILOVER_THIS_HOST}\s*$$ -> Record
+  ^\s*This host: Primary - ${FAILOVER_THIS_HOST} Ready\s*$$ -> Record
+  ^\s*This context: ${FAILOVER_THIS_HOST}\s*$$ -> Record
+  ^\s*This context: ${FAILOVER_THIS_HOST} Ready\s*$$ -> Record
+  ^\s*This host: Secondary - ${FAILOVER_THIS_HOST}\s*$$ -> Record
+  ^\s*This host: Secondary - ${FAILOVER_THIS_HOST} Ready\s*$$ -> Record
+
